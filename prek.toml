@@ -1,0 +1,83 @@
+minimum_prek_version = "0.4.0"
+fail_fast = true
+
+# 生成物はフック対象外
+exclude = { glob = [
+  "target/**",
+  "fuzz/artifacts/**",
+  "fuzz/corpus/**",
+  "fuzz/target/**",
+] }
+
+default_install_hook_types = ["pre-commit", "pre-push"]
+
+# pre-commit: 静的チェック + ユニットテスト
+# pre-push:  全テスト（Docker を要する統合テストを含む）
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace", priority = 0 },
+  { id = "end-of-file-fixer", priority = 0 },
+  { id = "check-merge-conflict", priority = 0 },
+  { id = "detect-private-key", priority = 0 },
+  { id = "mixed-line-ending", priority = 0 },
+  { id = "check-case-conflict", priority = 0 },
+  { id = "fix-byte-order-marker", priority = 0 },
+  { id = "check-toml", priority = 0 },
+  { id = "check-added-large-files", priority = 0, args = ["--maxkb=500"] },
+]
+
+[[repos]]
+repo = "meta"
+hooks = [
+  { id = "check-hooks-apply", priority = 5, files = "prek\\.toml$" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "cargo-fmt",
+    name = "cargo fmt",
+    entry = "cargo fmt --all -- --check",
+    language = "system",
+    types = ["rust"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 10,
+  },
+  {
+    id = "cargo-clippy",
+    name = "cargo clippy",
+    entry = "cargo clippy --workspace --all-targets -- -D warnings",
+    language = "system",
+    types = ["rust"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 20,
+  },
+  {
+    id = "cargo-test",
+    name = "cargo test",
+    # Docker を要する shiguredo_tokio_mysql の統合テストは pre-push で実行
+    entry = "cargo test --workspace --exclude shiguredo_tokio_mysql",
+    language = "system",
+    types = ["rust"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 30,
+    stages = ["pre-commit", "pre-push"],
+  },
+  {
+    id = "cargo-test-tokio-mysql",
+    name = "cargo test (tokio-mysql integration)",
+    entry = "cargo test -p shiguredo_tokio_mysql",
+    language = "system",
+    types = ["rust"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 40,
+    stages = ["pre-push"],
+  },
+]

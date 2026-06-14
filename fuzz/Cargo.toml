@@ -1,0 +1,64 @@
+[package]
+name = "fuzz"
+version = "0.0.0"
+edition = "2024"
+repository = "https://github.com/shiguredo/mysql-rs"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_protocol"
+path = "fuzz_targets/fuzz_protocol.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_auth"
+path = "fuzz_targets/fuzz_auth.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_converters"
+path = "fuzz_targets/fuzz_converters.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_charset"
+path = "fuzz_targets/fuzz_charset.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_time"
+path = "fuzz_targets/fuzz_time.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "fuzz_error"
+path = "fuzz_targets/fuzz_error.rs"
+test = false
+
+[dependencies]
+# 日付・時刻型（mysql と同じバージョン）
+chrono = { version = "0.4", features = ["std"] }
+libfuzzer-sys = "0.4"
+# DECIMAL 型（mysql と同じバージョン）
+rust_decimal = "1.42"
+
+[dependencies.shiguredo_mysql]
+path = ".."
