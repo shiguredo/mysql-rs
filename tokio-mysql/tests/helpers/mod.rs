@@ -4,22 +4,34 @@
 //! MySQL / TiDB 統合テスト用のヘルパー。
 #![allow(dead_code)]
 
+use shiguredo_container::core::IntoContainerPort;
+use shiguredo_container::{
+    AsyncRunner, ContainerAsync, ContainerRequest, GenericImage, ImageExt, WaitFor,
+};
 use shiguredo_mysql::converters::Value;
 use shiguredo_tokio_mysql::{ConnectOptions, Connection, Cursor, DictCursor, SslMode};
 use std::time::Duration;
-use testcontainers::core::{IntoContainerPort, WaitFor};
-use testcontainers::runners::AsyncRunner;
-use testcontainers::{ContainerAsync, GenericImage};
-use testcontainers_modules::mysql::Mysql;
 
 /// tracing subscriber を一度だけ初期化する。
 pub fn init_tracing() {
     let _ = tracing_subscriber::fmt::try_init();
 }
 
+/// MySQL コンテナのイメージを組み立てる。
+fn mysql_image() -> ContainerRequest<GenericImage> {
+    GenericImage::new("mysql", "8.1")
+        .with_exposed_port(3306.tcp())
+        .with_ready_conditions(vec![
+            WaitFor::message_on_either_std("X Plugin ready for connections. Bind-address"),
+            WaitFor::message_on_either_std("/usr/sbin/mysqld: ready for connections."),
+        ])
+}
+
 /// コンテナ起動後の MySQL に接続するための接続オプションを組み立てる。
-pub async fn build_mysql_options() -> (ConnectOptions, ContainerAsync<Mysql>) {
-    let node = Mysql::default()
+pub async fn build_mysql_options() -> (ConnectOptions, ContainerAsync<GenericImage>) {
+    let node = mysql_image()
+        .with_env_var("MYSQL_DATABASE", "test")
+        .with_env_var("MYSQL_ALLOW_EMPTY_PASSWORD", "yes")
         .start()
         .await
         .expect("MySQL コンテナの起動に失敗しました");

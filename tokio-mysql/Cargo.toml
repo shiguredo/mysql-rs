@@ -30,7 +30,6 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
-# Docker ベースの統合テスト
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["mysql"] }
+# コンテナベースの統合テスト（macOS は Apple Container、Linux は Docker Engine API）
+shiguredo_container = "2026.1.0-canary.4"
 tracing-subscriber = { workspace = true }
