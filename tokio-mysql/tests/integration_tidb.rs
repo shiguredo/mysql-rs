@@ -1,9 +1,9 @@
 // Copyright 2026, Shiguredo Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-//! testcontainers を使った TiDB 接続統合テスト。
+//! shiguredo_container を使った TiDB 接続統合テスト。
 //!
-//! Docker 上で TiDB コンテナを起動し、tokio_mysql クレートから
+//! コンテナ上で TiDB コンテナを起動し、tokio_mysql クレートから
 //! 実際に接続・クエリ実行・結果取得ができることを確認する。
 
 mod helpers;

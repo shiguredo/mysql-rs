@@ -1,9 +1,9 @@
 // Copyright 2026, Shiguredo Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-//! testcontainers を使った MySQL 接続統合テスト。
+//! shiguredo_container を使った MySQL 接続統合テスト。
 //!
-//! Docker 上で MySQL コンテナを起動し、tokio_mysql クレートから
+//! コンテナ上で MySQL コンテナを起動し、tokio_mysql クレートから
 //! 実際に接続・クエリ実行・結果取得ができることを確認する。
 
 mod helpers;

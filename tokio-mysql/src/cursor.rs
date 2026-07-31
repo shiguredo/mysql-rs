@@ -478,11 +478,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_execute_many_first_row_exceeds_max_len() {
+        use shiguredo_container::core::IntoContainerPort;
+        use shiguredo_container::{AsyncRunner, GenericImage, ImageExt, WaitFor};
         use std::time::Duration;
-        use testcontainers::runners::AsyncRunner;
-        use testcontainers_modules::mysql::Mysql;
 
-        let node = Mysql::default()
+        let node = GenericImage::new("mysql", "8.1")
+            .with_exposed_port(3306.tcp())
+            .with_ready_conditions(vec![
+                WaitFor::message_on_either_std("X Plugin ready for connections. Bind-address"),
+                WaitFor::message_on_either_std("/usr/sbin/mysqld: ready for connections."),
+            ])
+            .with_env_var("MYSQL_DATABASE", "test")
+            .with_env_var("MYSQL_ALLOW_EMPTY_PASSWORD", "yes")
             .start()
             .await
             .expect("MySQL コンテナの起動に失敗しました");
