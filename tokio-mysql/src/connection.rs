@@ -19,12 +19,13 @@ use shiguredo_mysql::constants::client_error;
 use shiguredo_mysql::constants::command;
 use shiguredo_mysql::converters::Value;
 use shiguredo_mysql::error::{Error, Result};
-use shiguredo_mysql::protocol::{MysqlPacket, OkPacketWrapper};
+use shiguredo_mysql::optionfile::OptionFile;
+use shiguredo_mysql::protocol::{LoadLocalPacketWrapper, MysqlPacket, OkPacketWrapper};
 use std::io;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, UnixStream};
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 
@@ -32,11 +33,14 @@ use tokio_rustls::TlsConnector;
 pub struct Connection {
     inner: InnerConnection,
     stream: Option<ConnectionStream>,
+    /// commit / rollback されずに破棄されたトランザクションがあるかどうか。
+    transaction_dirty: bool,
 }
 
 enum ConnectionStream {
     Plain(TcpStream),
     Tls(Box<tokio_rustls::client::TlsStream<TcpStream>>),
+    Unix(UnixStream),
 }
 
 impl ConnectionStream {
@@ -44,6 +48,7 @@ impl ConnectionStream {
         match self {
             Self::Plain(s) => s.read(buf).await,
             Self::Tls(s) => s.read(buf).await,
+            Self::Unix(s) => s.read(buf).await,
         }
     }
 
@@ -51,6 +56,7 @@ impl ConnectionStream {
         match self {
             Self::Plain(s) => s.write_all(data).await,
             Self::Tls(s) => s.write_all(data).await,
+            Self::Unix(s) => s.write_all(data).await,
         }
     }
 
@@ -58,6 +64,7 @@ impl ConnectionStream {
         match self {
             Self::Plain(s) => s.flush().await,
             Self::Tls(s) => s.flush().await,
+            Self::Unix(s) => s.flush().await,
         }
     }
 
@@ -65,6 +72,7 @@ impl ConnectionStream {
         match self {
             Self::Plain(s) => s.shutdown().await,
             Self::Tls(s) => s.shutdown().await,
+            Self::Unix(s) => s.shutdown().await,
         }
     }
 }
@@ -72,31 +80,52 @@ impl ConnectionStream {
 impl Connection {
     /// 新規接続を確立する。
     pub async fn connect(options: ConnectOptions) -> Result<Self> {
+        // オプションファイルを適用する。
+        let options = apply_option_file(options)?;
         let inner = InnerConnection::connect(options.clone())?;
-        let addr = match std::net::IpAddr::from_str(&options.host) {
-            Ok(ip) if ip.is_ipv6() => format!("[{}]:{}", options.host, options.port),
-            _ => format!("{}:{}", options.host, options.port),
+        let stream = if options.host.starts_with('/') {
+            // Unix ドメインソケット。postgres-rs と同じく
+            // ソケットファイルのパスを host に直接指定する。
+            let path = options.host.trim_end_matches('/');
+            let stream = timeout(options.connect_timeout, UnixStream::connect(path))
+                .await
+                .map_err(|e| Error::OperationalError {
+                    code: client_error::CR_CONN_HOST_ERROR,
+                    message: format!("Connection timeout: {}", e),
+                })?
+                .map_err(|e| Error::OperationalError {
+                    code: client_error::CR_CONN_HOST_ERROR,
+                    message: format!("Can't connect to MySQL server on {:?} ({})", path, e),
+                })?;
+            ConnectionStream::Unix(stream)
+        } else {
+            let addr = match std::net::IpAddr::from_str(&options.host) {
+                Ok(ip) if ip.is_ipv6() => format!("[{}]:{}", options.host, options.port),
+                _ => format!("{}:{}", options.host, options.port),
+            };
+            let stream = timeout(options.connect_timeout, TcpStream::connect(&addr))
+                .await
+                .map_err(|e| Error::OperationalError {
+                    code: client_error::CR_CONN_HOST_ERROR,
+                    message: format!("Connection timeout: {}", e),
+                })?
+                .map_err(|e| Error::OperationalError {
+                    code: client_error::CR_CONN_HOST_ERROR,
+                    message: format!("Can't connect to MySQL server on {:?} ({})", addr, e),
+                })?;
+            stream
+                .set_nodelay(true)
+                .map_err(|e| Error::OperationalError {
+                    code: client_error::CR_CONN_HOST_ERROR,
+                    message: format!("Failed to set TCP_NODELAY: {}", e),
+                })?;
+            ConnectionStream::Plain(stream)
         };
-        let stream = timeout(options.connect_timeout, TcpStream::connect(&addr))
-            .await
-            .map_err(|e| Error::OperationalError {
-                code: client_error::CR_CONN_HOST_ERROR,
-                message: format!("Connection timeout: {}", e),
-            })?
-            .map_err(|e| Error::OperationalError {
-                code: client_error::CR_CONN_HOST_ERROR,
-                message: format!("Can't connect to MySQL server on {:?} ({})", addr, e),
-            })?;
-        stream
-            .set_nodelay(true)
-            .map_err(|e| Error::OperationalError {
-                code: client_error::CR_CONN_HOST_ERROR,
-                message: format!("Failed to set TCP_NODELAY: {}", e),
-            })?;
 
         let mut conn = Self {
             inner,
-            stream: Some(ConnectionStream::Plain(stream)),
+            stream: Some(stream),
+            transaction_dirty: false,
         };
 
         // greeting
@@ -203,6 +232,13 @@ impl Connection {
                 return Err(Error::InterfaceError {
                     code: client_error::CR_SSL_CONNECTION_ERROR,
                     message: "Already TLS".to_string(),
+                });
+            }
+            // Unix ドメインソケットはローカル接続のため TLS を使わない。
+            ConnectionStream::Unix(_) => {
+                return Err(Error::InterfaceError {
+                    code: client_error::CR_SSL_CONNECTION_ERROR,
+                    message: "TLS upgrade is not supported on Unix domain sockets".to_string(),
                 });
             }
         };
@@ -325,8 +361,18 @@ impl Connection {
     async fn read_query_result(&mut self, unbuffered: bool) -> Result<i64> {
         let mut result = MySQLResult::new();
         result.unbuffered_active = unbuffered;
+        // LOAD LOCAL パケットは結果セットの最初のパケットとしてのみ現れる。
+        // 行データの NULL 値 (0xFB) と区別するため、最初のパケットだけ判定する。
+        let mut first_packet = true;
         loop {
             let packet = self.read_packet().await?;
+            if first_packet && packet.is_load_local_packet() {
+                // LOAD LOCAL パケットはファイルの内容を送信してから結果の読み込みを続ける。
+                self.send_load_local_file(&packet).await?;
+                first_packet = false;
+                continue;
+            }
+            first_packet = false;
             match result.feed_packet(packet, &self.inner)? {
                 FeedResult::NeedMore => continue,
                 FeedResult::Done | FeedResult::UnbufferedReady => {
@@ -338,9 +384,91 @@ impl Connection {
         }
     }
 
+    /// LOAD DATA LOCAL INFILE のファイル内容を送信する。
+    ///
+    /// PyMySQL の `LoadLocalFile` に相当する。
+    /// ファイルはチャンクに分けて送信し、空パケットで終端する。
+    async fn send_load_local_file(&mut self, packet: &MysqlPacket) -> Result<()> {
+        if !self.inner.options().local_infile {
+            return Err(Error::OperationalError {
+                code: client_error::CR_LOAD_DATA_LOCAL_INFILE_REJECTED,
+                message: "Received LOAD_LOCAL packet but local_infile option is false".to_string(),
+            });
+        }
+        let load_packet = LoadLocalPacketWrapper::from_packet(packet)?;
+        let filename = String::from_utf8_lossy(&load_packet.filename).to_string();
+        let filename = expand_user(&filename);
+        let data = tokio::fs::read(&filename)
+            .await
+            .map_err(|e| Error::OperationalError {
+                code: client_error::CR_LOAD_DATA_LOCAL_INFILE_REJECTED,
+                message: format!(
+                    "Failed to read LOAD DATA LOCAL INFILE file {}: {}",
+                    filename, e
+                ),
+            })?;
+        // チャンクごとにパケットを送信する。パケット分割はコア側が行う。
+        const CHUNK_SIZE: usize = 8192;
+        for chunk in data.chunks(CHUNK_SIZE) {
+            self.inner.write_packet(chunk)?;
+        }
+        // 空パケットでファイルの終端を示す。
+        self.inner.write_packet(&[])?;
+        self.pump_write().await?;
+        tracing::debug!(filename = %filename, bytes = data.len(), "Sent LOAD DATA LOCAL INFILE file");
+        Ok(())
+    }
+
+    /// アンバッファードクエリの残りの行をすべて消費する。
+    pub(crate) async fn finish_unbuffered_query(&mut self) -> Result<()> {
+        loop {
+            let active = self
+                .inner
+                .result()
+                .map(|r| r.unbuffered_active)
+                .unwrap_or(false);
+            if !active {
+                return Ok(());
+            }
+            let packet = self.read_packet().await?;
+            let result = self
+                .inner
+                .result_mut()
+                .expect("unbuffered result is set while unbuffered_active is true");
+            result.read_rowdata_packet_unbuffered(packet)?;
+        }
+    }
+
+    /// アンバッファードクエリの次の行を読み込む。
+    ///
+    /// 結果セットの末尾に達した場合は `None` を返す。
+    pub async fn next_unbuffered_row(&mut self) -> Result<Option<Vec<Value>>> {
+        loop {
+            let active = self
+                .inner
+                .result()
+                .map(|r| r.unbuffered_active)
+                .unwrap_or(false);
+            if !active {
+                return Ok(None);
+            }
+            let packet = self.read_packet().await?;
+            let result = self
+                .inner
+                .result_mut()
+                .expect("unbuffered result is set while unbuffered_active is true");
+            let row = result.read_rowdata_packet_unbuffered(packet)?;
+            if row.is_some() {
+                return Ok(row);
+            }
+        }
+    }
+
     /// クエリを実行する。
     pub async fn query(&mut self, sql: &str, unbuffered: bool) -> Result<i64> {
         tracing::debug!(sql = %sql, unbuffered, "Executing query");
+        // アンバッファードクエリの残りがあれば先に消費する。
+        self.finish_unbuffered_query().await?;
         self.inner
             .execute_command(command::COM_QUERY, sql.as_bytes())?;
         self.pump_write().await?;
@@ -365,6 +493,7 @@ impl Connection {
 
     /// 次の結果セットに移動する。
     pub async fn next_result(&mut self, unbuffered: bool) -> Result<i64> {
+        self.finish_unbuffered_query().await?;
         self.read_query_result(unbuffered).await
     }
 
@@ -373,8 +502,17 @@ impl Connection {
         crate::cursor::Cursor::new(self)
     }
 
+    /// アンバッファードカーソルを作成する。
+    ///
+    /// 行をメモリに蓄えず、fetch のたびにサーバーから読み込む。
+    pub fn unbuffered_cursor(&mut self) -> crate::cursor::UnbufferedCursor<'_> {
+        crate::cursor::UnbufferedCursor::new(self)
+    }
+
     /// 接続を閉じる。
     pub async fn close(&mut self) -> Result<()> {
+        // アンバッファードクエリの残りがあれば先に消費する。
+        self.finish_unbuffered_query().await?;
         self.inner.close()?;
         self.pump_write().await?;
         if let Some(mut stream) = self.stream.take() {
@@ -436,6 +574,235 @@ impl Connection {
     pub fn server_version(&self) -> &str {
         self.inner.server_version()
     }
+
+    /// サーバーへの疎通を確認する。
+    ///
+    /// PyMySQL の `Connection.ping` に相当する。
+    pub async fn ping(&mut self) -> Result<()> {
+        self.inner.ping()?;
+        self.pump_write().await?;
+        self.read_ok_packet().await?;
+        Ok(())
+    }
+
+    /// 指定したスレッド ID の接続を終了させる。
+    ///
+    /// PyMySQL の `Connection.kill` に相当する。
+    pub async fn kill(&mut self, thread_id: u32) -> Result<i64> {
+        self.query(&format!("KILL {}", thread_id), false).await
+    }
+
+    /// データベースを切り替える。
+    ///
+    /// PyMySQL の `Connection.select_db` に相当する。
+    pub async fn select_db(&mut self, db: &str) -> Result<()> {
+        self.inner.select_db(db)?;
+        self.pump_write().await?;
+        self.read_ok_packet().await?;
+        Ok(())
+    }
+
+    /// トランザクションを開始する。
+    ///
+    /// 既にトランザクション内の場合はエラーを返す。
+    /// トランザクションを閉じるときは `Transaction::commit` または
+    /// `Transaction::rollback` を呼ぶ。
+    /// どちらも呼ばずに破棄した場合は、次の `begin()` 時に
+    /// ロールバックされてから開始される。
+    pub async fn begin(&mut self) -> Result<crate::transaction::Transaction<'_>> {
+        crate::transaction::Transaction::begin(self).await
+    }
+
+    /// トランザクションを開始する (オプション指定)。
+    pub async fn begin_with(
+        &mut self,
+        options: crate::transaction::TxOptions,
+    ) -> Result<crate::transaction::Transaction<'_>> {
+        crate::transaction::Transaction::begin_with(self, options).await
+    }
+
+    /// トランザクションをコミットする。
+    ///
+    /// PyMySQL の `Connection.commit` に相当する。
+    /// 明示的なトランザクション管理には `begin()` が返す
+    /// `Transaction` ガード型の使用を推奨する。
+    pub async fn commit(&mut self) -> Result<()> {
+        self.inner.commit()?;
+        self.pump_write().await?;
+        self.read_ok_packet().await?;
+        Ok(())
+    }
+
+    /// トランザクションをロールバックする。
+    ///
+    /// PyMySQL の `Connection.rollback` に相当する。
+    /// 明示的なトランザクション管理には `begin()` が返す
+    /// `Transaction` ガード型の使用を推奨する。
+    pub async fn rollback(&mut self) -> Result<()> {
+        self.inner.rollback()?;
+        self.pump_write().await?;
+        self.read_ok_packet().await?;
+        Ok(())
+    }
+
+    /// 現在のトランザクション内かどうかを返す。
+    pub fn in_transaction(&self) -> bool {
+        self.inner.in_transaction()
+    }
+
+    /// SHOW WARNINGS の結果を返す。
+    ///
+    /// PyMySQL の `Connection.show_warnings` に相当する。
+    /// 各行は (レベル, コード, メッセージ) の 3 カラムを持つ。
+    pub async fn show_warnings(&mut self) -> Result<Vec<Vec<Value>>> {
+        self.query("SHOW WARNINGS", false).await?;
+        let rows = self
+            .result()
+            .and_then(|r| r.rows.clone())
+            .unwrap_or_default();
+        Ok(rows)
+    }
+
+    /// 接続先情報を取得する。
+    ///
+    /// PyMySQL の `Connection.get_host_info` に相当する。
+    /// Unix ドメインソケット接続の場合はソケットのパスを返す。
+    pub fn get_host_info(&self) -> String {
+        self.inner.get_host_info()
+    }
+
+    /// プロトコルバージョンを取得する。
+    ///
+    /// PyMySQL の `Connection.get_proto_info` に相当する。
+    pub fn get_proto_info(&self) -> u8 {
+        self.inner.get_proto_info()
+    }
+
+    /// フィールド型ごとのデコーダーを登録する。
+    ///
+    /// 登録したデコーダーは組み込みのデコーダーより優先される。
+    pub fn register_converter(
+        &mut self,
+        type_code: u8,
+        converter: shiguredo_mysql::converters::Converter,
+    ) {
+        self.inner.register_converter(type_code, converter);
+    }
+
+    /// トランザクションの破棄を記録する。
+    ///
+    /// `Transaction` が commit / rollback されずに破棄されたときに呼ばれる。
+    pub(crate) fn mark_transaction_dirty(&mut self) {
+        self.transaction_dirty = true;
+    }
+
+    /// 破棄されたトランザクションをロールバックする。
+    ///
+    /// 接続がプールに返却される直前や、次のトランザクション開始時に呼ぶ。
+    /// MySQL では autocommit が無効な状態で DML を実行すると
+    /// トランザクションが暗黙的に開始されるため、
+    /// 破棄されたトランザクションだけでなく進行中のトランザクションも
+    /// ロールバックする。
+    pub(crate) async fn rollback_dirty_transaction(&mut self) -> Result<()> {
+        if self.transaction_dirty || self.in_transaction() {
+            self.query("ROLLBACK", false).await?;
+            self.transaction_dirty = false;
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// オプションファイルを適用する。
+///
+/// デフォルト値のままのフィールドだけを指定グループの値で補完する。
+/// PyMySQL の `read_default_file` / `read_default_group` に相当する。
+fn apply_option_file(mut options: ConnectOptions) -> Result<ConnectOptions> {
+    let Some(path) = options.read_default_file.take() else {
+        return Ok(options);
+    };
+    let group = options
+        .read_default_group
+        .clone()
+        .unwrap_or_else(|| "client".to_string());
+    let option_file = OptionFile::read(&path)?;
+    let defaults = ConnectOptions::default();
+
+    if options.host == defaults.host
+        && let Some(value) = option_file.get(&group, "host")
+    {
+        options.host = value.to_string();
+    }
+    if options.port == defaults.port
+        && let Some(value) = option_file.get(&group, "port")
+    {
+        options.port = value.parse().map_err(|_| Error::OperationalError {
+            code: client_error::CR_UNKNOWN_ERROR,
+            message: format!("Invalid port in option file {}: {}", path.display(), value),
+        })?;
+    }
+    if options.user.is_empty()
+        && let Some(value) = option_file.get(&group, "user")
+    {
+        options.user = value.to_string();
+    }
+    if options.password.is_empty()
+        && let Some(value) = option_file.get(&group, "password")
+    {
+        options.password = value.as_bytes().to_vec();
+    }
+    if options.database.is_none()
+        && let Some(value) = option_file.get(&group, "database")
+    {
+        options.database = Some(value.to_string());
+    }
+    // PyMySQL と同じく socket キーは Unix ドメインソケットのパスを表す。
+    // host がデフォルト値のままのときに限り適用する。
+    if options.host == defaults.host
+        && let Some(value) = option_file.get(&group, "socket")
+    {
+        options.host = value.to_string();
+    }
+    if options.charset == defaults.charset
+        && let Some(value) = option_file.get(&group, "default-character-set")
+    {
+        options.charset = value.to_string();
+    }
+    if options.ssl_ca.is_none()
+        && let Some(value) = option_file.get(&group, "ssl-ca")
+    {
+        options.ssl_ca = Some(value.to_string());
+    }
+    if options.ssl_cert.is_none()
+        && let Some(value) = option_file.get(&group, "ssl-cert")
+    {
+        options.ssl_cert = Some(value.to_string());
+    }
+    if options.ssl_key.is_none()
+        && let Some(value) = option_file.get(&group, "ssl-key")
+    {
+        options.ssl_key = Some(value.to_string());
+    }
+    Ok(options)
+}
+
+/// `~` で始まるパスをユーザーのホームディレクトリに展開する。
+fn expand_user(path: &str) -> String {
+    if path == "~" {
+        home_dir().unwrap_or_default()
+    } else if let Some(rest) = path.strip_prefix("~/") {
+        format!("{}/{}", home_dir().unwrap_or_default(), rest)
+    } else {
+        path.to_string()
+    }
+}
+
+/// ホームディレクトリを取得する。
+fn home_dir() -> Option<String> {
+    std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok())
 }
 
 /// クエリ文字列に引数を埋め込む共通実装。

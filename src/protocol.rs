@@ -440,3 +440,25 @@ impl LoadLocalPacketWrapper {
         Ok(Self { filename })
     }
 }
+
+/// パケットの内容をデバッグ出力する。
+///
+/// PyMySQL の `protocol.dump_packet` に相当し、
+/// 16 バイトごとの 16 進ダンプと ASCII 表現を tracing の debug レベルで出力する。
+pub fn dump_packet(data: &[u8]) {
+    tracing::debug!("--- MySQL packet dump ({} bytes) ---", data.len());
+    for (i, chunk) in data.chunks(16).enumerate() {
+        let hex: Vec<String> = chunk.iter().map(|b| format!("{:02x}", b)).collect();
+        let ascii: String = chunk
+            .iter()
+            .map(|&b| {
+                if b.is_ascii_graphic() || b == b' ' {
+                    b as char
+                } else {
+                    '.'
+                }
+            })
+            .collect();
+        tracing::debug!("{:04x}  {:<48}  |{}|", i * 16, hex.join(" "), ascii);
+    }
+}

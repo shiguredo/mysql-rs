@@ -177,7 +177,10 @@ impl MySQLResult {
         } else {
             None
         };
-        let converter = crate::converters::decoder_for(field.type_code);
+        // 登録されたデコーダーが最優先され、次に組み込みのデコーダーを使う。
+        let converter = conn
+            .field_converter(field.type_code)
+            .or_else(|| crate::converters::decoder_for(field.type_code));
         self.converters.push(FieldConverter {
             encoding,
             converter,

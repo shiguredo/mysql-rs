@@ -11,6 +11,7 @@ pub mod connection;
 pub mod constants;
 pub mod converters;
 pub mod error;
+pub mod optionfile;
 pub mod protocol;
 pub mod time;
 

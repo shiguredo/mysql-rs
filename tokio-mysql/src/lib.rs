@@ -9,9 +9,12 @@
 pub mod connection;
 pub mod cursor;
 pub mod pool;
+pub mod transaction;
 
 pub use connection::Connection;
-pub use cursor::{Cursor, DictCursor};
+pub use cursor::{Cursor, DictCursor, UnbufferedCursor, UnbufferedDictCursor};
 pub use pool::{Pool, PoolConfig, PooledConnection};
 pub use shiguredo_mysql::connection::{ConnectOptions, SslMode};
-pub use shiguredo_mysql::{auth, charset, constants, converters, error, protocol, time};
+pub use shiguredo_mysql::{
+    auth, charset, constants, converters, error, optionfile, protocol, time,
+};

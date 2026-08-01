@@ -17,6 +17,8 @@ use crate::constants::command;
 use crate::constants::server_status;
 use crate::error::{Error, Result};
 use crate::protocol::{MysqlPacket, OkPacketWrapper};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// デフォルト文字セット。
@@ -47,6 +49,12 @@ pub struct ConnectOptions {
     pub program_name: Option<String>,
     pub server_public_key: Option<Vec<u8>>,
     pub use_unicode: bool,
+    /// 接続時に読むオプションファイル (my.cnf)。
+    ///
+    /// デフォルト値のままのフィールドだけがファイルの値で補完される。
+    pub read_default_file: Option<PathBuf>,
+    /// オプションファイルから読むグループ。`None` の場合は `client`。
+    pub read_default_group: Option<String>,
 }
 
 impl Default for ConnectOptions {
@@ -74,6 +82,8 @@ impl Default for ConnectOptions {
             program_name: None,
             server_public_key: None,
             use_unicode: true,
+            read_default_file: None,
+            read_default_group: None,
         }
     }
 }
@@ -126,14 +136,18 @@ pub struct Connection {
     closed: bool,
     pub(crate) auth_phase: auth::AuthPhase,
     pub(crate) needs_tls_upgrade: bool,
+    /// フィールド型ごとに登録されたデコーダー。組み込みデコーダーより優先される。
+    field_converters: HashMap<u8, crate::converters::Converter>,
 }
 
 impl Connection {
     /// 新規接続のための内部状態を構築する。
     ///
     /// 実際の TCP/TLS 接続およびハンドシェイクは呼び出し側が行う。
+    /// `host` が `/` で始まる場合は Unix ドメインソケットのパスとして扱う。
     pub fn connect(options: ConnectOptions) -> Result<Self> {
-        if options.port == 0 {
+        // Unix ドメインソケット接続ではポート番号は不要。
+        if !options.host.starts_with('/') && options.port == 0 {
             return Err(Error::ProgrammingError {
                 code: client_error::CR_UNKNOWN_ERROR,
                 message: "port must be greater than 0".to_string(),
@@ -182,6 +196,7 @@ impl Connection {
             closed: false,
             auth_phase: auth::AuthPhase::Initial,
             needs_tls_upgrade: false,
+            field_converters: HashMap::new(),
         };
 
         if options.database.is_some() {
@@ -295,6 +310,59 @@ impl Connection {
         (self.server_status & server_status::SERVER_STATUS_AUTOCOMMIT) != 0
     }
 
+    /// トランザクション内かどうかを返す。
+    pub fn in_transaction(&self) -> bool {
+        (self.server_status & server_status::SERVER_STATUS_IN_TRANS) != 0
+    }
+
+    /// データベースを切り替える。
+    ///
+    /// PyMySQL の `Connection.select_db` に相当し、COM_INIT_DB コマンドを送信する。
+    /// 応答の OK パケット読み込みは呼び出し側が行う。
+    pub fn select_db(&mut self, db: &str) -> Result<()> {
+        self.execute_command(command::COM_INIT_DB, db.as_bytes())
+    }
+
+    /// サーバーへの疎通を確認する。
+    ///
+    /// PyMySQL の `Connection.ping` に相当し、COM_PING コマンドを送信する。
+    /// 応答の OK パケット読み込みは呼び出し側が行う。
+    pub fn ping(&mut self) -> Result<()> {
+        self.execute_command(command::COM_PING, &[])
+    }
+
+    /// 指定したスレッド ID の接続を終了させる。
+    ///
+    /// PyMySQL の `Connection.kill` と同じく KILL クエリを実行する。
+    pub fn kill(&mut self, thread_id: u32) -> Result<i64> {
+        self.query(&format!("KILL {}", thread_id), false)
+    }
+
+    /// トランザクションを開始する。
+    ///
+    /// PyMySQL の `Connection.begin` と同じく BEGIN クエリを実行する。
+    /// 既にトランザクション内の場合はサーバー側で何も行われない。
+    /// 応答の OK パケット読み込みは呼び出し側が行う。
+    pub fn begin(&mut self) -> Result<()> {
+        self.execute_command(command::COM_QUERY, b"BEGIN")
+    }
+
+    /// トランザクションをコミットする。
+    ///
+    /// PyMySQL の `Connection.commit` と同じく COMMIT クエリを実行する。
+    /// 応答の OK パケット読み込みは呼び出し側が行う。
+    pub fn commit(&mut self) -> Result<()> {
+        self.execute_command(command::COM_QUERY, b"COMMIT")
+    }
+
+    /// トランザクションをロールバックする。
+    ///
+    /// PyMySQL の `Connection.rollback` と同じく ROLLBACK クエリを実行する。
+    /// 応答の OK パケット読み込みは呼び出し側が行う。
+    pub fn rollback(&mut self) -> Result<()> {
+        self.execute_command(command::COM_QUERY, b"ROLLBACK")
+    }
+
     /// クエリを実行する。
     pub fn query(&mut self, sql: &str, unbuffered: bool) -> Result<i64> {
         tracing::debug!(sql = %sql, unbuffered, "Executing query");
@@ -342,6 +410,7 @@ impl Connection {
     /// 結果セットを設定する。
     pub fn set_result(&mut self, result: MySQLResult) {
         self.server_status = result.server_status.unwrap_or(self.server_status);
+        self.affected_rows = result.affected_rows;
         self.result = Some(result);
     }
 
@@ -568,9 +637,45 @@ impl Connection {
         &self.server_version
     }
 
+    /// プロトコルバージョンを取得する。
+    ///
+    /// PyMySQL の `Connection.get_proto_info` に相当する。
+    pub fn get_proto_info(&self) -> u8 {
+        self.protocol_version
+    }
+
+    /// 接続先情報を取得する。
+    ///
+    /// PyMySQL の `Connection.get_host_info` に相当する。
+    /// Unix ドメインソケット接続の場合はソケットのパスを返す。
+    pub fn get_host_info(&self) -> String {
+        if self.options.host.starts_with('/') {
+            self.options.host.clone()
+        } else {
+            format!("{}:{}", self.options.host, self.options.port)
+        }
+    }
+
+    /// フィールド型ごとのデコーダーを登録する。
+    ///
+    /// 登録したデコーダーは組み込みのデコーダーより優先される。
+    /// PyMySQL の `conv` によるデコーダー差し替えに相当する。
+    pub fn register_converter(&mut self, type_code: u8, converter: crate::converters::Converter) {
+        self.field_converters.insert(type_code, converter);
+    }
+
+    pub(crate) fn field_converter(&self, type_code: u8) -> Option<crate::converters::Converter> {
+        self.field_converters.get(&type_code).copied()
+    }
+
     /// 現在の結果セットを取得する。
     pub fn result(&self) -> Option<&MySQLResult> {
         self.result.as_ref()
+    }
+
+    /// 現在の結果セットを可変参照で取得する。
+    pub fn result_mut(&mut self) -> Option<&mut MySQLResult> {
+        self.result.as_mut()
     }
 
     pub(crate) fn auth_plugin_name(&self) -> &AuthPlugin {
@@ -666,5 +771,34 @@ mod tests {
         let packet = build_packet(0, &payload);
         let result = conn.feed_bytes(&packet);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_connect_with_unix_socket() {
+        // host が / で始まる場合は Unix ドメインソケットのパスとして扱い、
+        // ポート 0 でもエラーにならない。
+        let options = ConnectOptions {
+            host: "/var/run/mysqld/mysqld.sock".to_string(),
+            port: 0,
+            ..Default::default()
+        };
+        assert!(Connection::connect(options).is_ok());
+    }
+
+    #[test]
+    fn test_connect_rejects_zero_port_without_unix_socket() {
+        let options = ConnectOptions {
+            port: 0,
+            ..Default::default()
+        };
+        let result = Connection::connect(options);
+        assert!(result.is_err(), "TCP 接続でポート 0 はエラーにするべき");
+    }
+
+    #[test]
+    fn test_in_transaction() {
+        // 初期状態ではトランザクション内ではない。
+        let conn = Connection::connect(ConnectOptions::default()).unwrap();
+        assert!(!conn.in_transaction());
     }
 }

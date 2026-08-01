@@ -14,7 +14,7 @@ use shiguredo_mysql::converters::{Value, decoder_for, escape_bytes, escape_strin
 
 /// テスト用の Value 戦略。
 fn value_strategy() -> impl Strategy<Value = Value> {
-    prop_oneof![
+    let leaf = prop_oneof![
         Just(Value::Null),
         any::<bool>().prop_map(Value::Bool),
         any::<i64>().prop_map(Value::Int),
@@ -44,7 +44,13 @@ fn value_strategy() -> impl Strategy<Value = Value> {
         (-1_000_000_000_000i64..=1_000_000_000_000i64)
             .prop_map(|s| Value::TimeSpan(TimeDelta::seconds(s))),
         any::<i64>().prop_map(|i| Value::Decimal(Decimal::from(i))),
-    ]
+    ];
+    leaf.prop_recursive(2, 16, 4, |inner| {
+        prop_oneof![
+            proptest::collection::vec(inner.clone(), 0..=4).prop_map(Value::List),
+            proptest::collection::hash_set(inner, 0..=4).prop_map(Value::Set),
+        ]
+    })
 }
 
 proptest! {
@@ -168,6 +174,18 @@ proptest! {
                 let inner = &sql[1..sql.len() - 1];
                 // TimeSpan は '[-]HH:MM:SS[.ffffff]' 形式。
                 prop_assert!(inner.split(':').count() == 3);
+            }
+            Value::List(items) => {
+                if items.is_empty() {
+                    prop_assert_eq!(sql, "()");
+                } else {
+                    prop_assert!(sql.starts_with('(') && sql.ends_with(')'));
+                }
+            }
+            Value::Set(items) => {
+                if items.is_empty() {
+                    prop_assert_eq!(sql, "");
+                }
             }
         }
     }

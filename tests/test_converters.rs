@@ -3,6 +3,7 @@
 
 use shiguredo_mysql::constants::field_type;
 use shiguredo_mysql::converters::{Value, decoder_for, escape_bytes, escape_string};
+use std::collections::HashSet;
 
 #[test]
 fn test_escape_string() {
@@ -85,6 +86,56 @@ fn test_escape_float_non_finite() {
         Value::Float(f64::NEG_INFINITY).to_sql("utf8").is_err(),
         "負の無限大は SQL リテラルにできないべき"
     );
+}
+
+#[test]
+fn test_value_list_to_sql() {
+    let list = Value::List(vec![Value::Int(1), Value::String("a".to_string())]);
+    assert_eq!(
+        list.to_sql("utf8").unwrap(),
+        "(1,'a')",
+        "リストはカンマ区切りで括弧で囲むべき"
+    );
+    assert_eq!(
+        Value::List(vec![]).to_sql("utf8").unwrap(),
+        "()",
+        "空リストは空の括弧にするべき"
+    );
+    assert_eq!(
+        Value::List(vec![Value::Int(1)]).to_sql("utf8").unwrap(),
+        "(1)",
+        "要素が 1 つのリストも括弧で囲むべき"
+    );
+}
+
+#[test]
+fn test_value_set_to_sql() {
+    let mut set = HashSet::new();
+    set.insert(Value::Int(1));
+    set.insert(Value::Int(2));
+    let sql = Value::Set(set).to_sql("utf8").unwrap();
+    // 集合は順序を持たないため、要素ごとに検証する。
+    let mut values: Vec<&str> = sql.split(',').collect();
+    values.sort_unstable();
+    assert_eq!(values, vec!["1", "2"]);
+    assert_eq!(
+        Value::Set(HashSet::new()).to_sql("utf8").unwrap(),
+        "",
+        "空集合は空文字列にするべき"
+    );
+}
+
+#[test]
+fn test_value_set_hash() {
+    use std::collections::HashSet as Set;
+    use std::hash::BuildHasher;
+
+    // 要素の挿入順が異なる同一の集合は、同じハッシュになるべき。
+    let a = Value::Set(Set::from([Value::Int(1), Value::String("x".to_string())]));
+    let b = Value::Set(Set::from([Value::String("x".to_string()), Value::Int(1)]));
+
+    let state = std::collections::hash_map::RandomState::new();
+    assert_eq!(state.hash_one(&a), state.hash_one(&b));
 }
 
 #[test]

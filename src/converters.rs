@@ -6,6 +6,8 @@
 use crate::constants::field_type;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use rust_decimal::Decimal;
+use std::collections::HashSet;
+use std::hash::Hasher;
 
 /// データベース上で扱う値の型。
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +23,50 @@ pub enum Value {
     DateTime(NaiveDateTime),
     TimeSpan(chrono::TimeDelta),
     Decimal(Decimal),
+    /// 要素のリスト。`(v1,v2,...)` の形式でエスケープされる。
+    List(Vec<Value>),
+    /// 要素の集合。`v1,v2,...` の形式でエスケープされる。
+    ///
+    /// 集合の要素は順序を持たないため、出力される順序は不定である。
+    Set(HashSet<Value>),
 }
+
+impl std::hash::Hash for Value {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Value::Null => {}
+            Value::Bool(b) => b.hash(state),
+            Value::Int(i) => i.hash(state),
+            // f64 は std の Hash を実装していないためビット表現でハッシュする。
+            Value::Float(f) => f.to_bits().hash(state),
+            Value::String(s) => s.hash(state),
+            Value::Bytes(b) => b.hash(state),
+            Value::Date(d) => d.hash(state),
+            Value::Time(t) => t.hash(state),
+            Value::DateTime(dt) => dt.hash(state),
+            Value::TimeSpan(td) => td.hash(state),
+            Value::Decimal(d) => d.hash(state),
+            Value::List(items) => items.hash(state),
+            Value::Set(items) => {
+                // HashSet は順序を持たないため、要素のハッシュを XOR で合成する。
+                // 等しい集合は同じ要素から構成されるため、常に同じハッシュになる。
+                let mut combined = 0_u64;
+                for item in items {
+                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                    item.hash(&mut hasher);
+                    combined ^= hasher.finish();
+                }
+                combined.hash(state);
+            }
+        }
+    }
+}
+
+// HashSet<Value> の PartialEq には Value: Eq が必要なため、
+// PartialEq と Hash を実装したうえで Eq をマーカーとして実装する。
+// NaN を含む Float の等価性は PartialEq の定義に従う。
+impl Eq for Value {}
 
 impl Value {
     /// 値を SQL リテラルとしてエスケープする。
@@ -50,6 +95,8 @@ impl Value {
             )),
             Value::TimeSpan(td) => Ok(format!("'{}'", format_timedelta(td))),
             Value::Decimal(d) => Ok(d.to_string()),
+            Value::List(items) => escape_sequence(items, encoding),
+            Value::Set(items) => escape_set(items, encoding),
         }
     }
 }
@@ -60,6 +107,29 @@ pub type Converter = fn(&str) -> Value;
 /// 値を SQL リテラルに変換する。
 pub fn escape_item(value: &Value, encoding: &str) -> crate::error::Result<String> {
     value.to_sql(encoding)
+}
+
+/// 値のリストを `(v1,v2,...)` の形式に変換する。
+///
+/// PyMySQL の `escape_sequence` に相当する。
+pub fn escape_sequence(values: &[Value], encoding: &str) -> crate::error::Result<String> {
+    let items = values
+        .iter()
+        .map(|value| value.to_sql(encoding))
+        .collect::<crate::error::Result<Vec<_>>>()?;
+    Ok(format!("({})", items.join(",")))
+}
+
+/// 値の集合を `v1,v2,...` の形式に変換する。
+///
+/// PyMySQL の `escape_set` に相当する。集合は順序を持たないため、
+/// 出力される順序は不定である。
+pub fn escape_set(values: &HashSet<Value>, encoding: &str) -> crate::error::Result<String> {
+    let items = values
+        .iter()
+        .map(|value| value.to_sql(encoding))
+        .collect::<crate::error::Result<Vec<_>>>()?;
+    Ok(items.join(","))
 }
 
 /// 浮動小数点数を MySQL 用に文字列化する。

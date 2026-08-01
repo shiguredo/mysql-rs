@@ -259,7 +259,7 @@ impl PoolManager {
                             self.handle_acquire(reply).await;
                         }
                         PoolRequest::Return { conn, created_at } => {
-                            self.handle_return(conn, created_at);
+                            self.handle_return(conn, created_at).await;
                         }
                         PoolRequest::Close => {
                             tracing::info!("Connection pool closing");
@@ -310,10 +310,18 @@ impl PoolManager {
     }
 
     /// 接続の返却を処理する。
-    fn handle_return(&mut self, conn: Box<Connection>, created_at: Instant) {
+    async fn handle_return(&mut self, mut conn: Box<Connection>, created_at: Instant) {
         self.active_count = self.active_count.saturating_sub(1);
 
         if !conn.is_open() {
+            return;
+        }
+
+        // commit / rollback されずに破棄されたトランザクションがあれば
+        // ロールバックしてからアイドルに戻す。
+        // ロールバックに失敗した場合は接続を破棄する。
+        if let Err(e) = conn.rollback_dirty_transaction().await {
+            tracing::debug!(error = %e, "Failed to roll back dirty transaction, dropping connection");
             return;
         }
 
