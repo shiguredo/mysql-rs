@@ -14,7 +14,7 @@ exclude = ["fuzz"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.96"
+rust-version = "1.93"
 repository = "https://github.com/shiguredo/mysql-rs"
 license = "Apache-2.0"
 
@@ -26,7 +26,7 @@ chrono = { version = "0.4", features = ["std"] }
 # DECIMAL 型
 rust_decimal = "1.42"
 # PEM 形式の公開鍵・証明書読み込み（sha256_password 認証で使用）
-rustls-pki-types = { version = "1.14", features = ["std"] }
+rustls-pki-types = { version = "1.15", features = ["std"] }
 # ログ出力
 tracing = "0.1"
 # テスト時の tracing ログ出力
@@ -37,7 +37,7 @@ aws-lc-rs = { workspace = true }
 chrono = { workspace = true }
 # client_ed25519 認証の楕円曲線演算
 curve25519-dalek = {
-  version = "4.1",
+  version = "5.0",
   features = ["digest", "precomputed-tables", "rand_core"]
 }
 # 文字エンコーディング変換
@@ -48,12 +48,16 @@ rust_decimal = { workspace = true }
 rustls-pki-types = { workspace = true }
 tracing = { workspace = true }
 # X.509 証明書パース（公開鍵抽出用）
-x509-cert = { version = "0.2.5", features = ["pem"] }
+x509-cert = { version = "0.3", features = ["pem"] }
 
 [dev-dependencies]
 # テスト用 X.509 証明書の動的生成（PEM はハードコードしない）
-rcgen = { version = "0.14", default-features = false, features = [
-  "crypto",
-  "pem",
-  "aws_lc_rs",
-] }
+rcgen = {
+  version = "0.14",
+  default-features = false,
+  features = [
+    "aws_lc_rs",
+    "crypto",
+    "pem",
+  ]
+}

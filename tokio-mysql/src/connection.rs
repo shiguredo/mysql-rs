@@ -383,6 +383,15 @@ impl Connection {
         Ok(())
     }
 
+    /// 強制的に接続を閉じる。
+    ///
+    /// COM_QUIT の送信やストリームの graceful shutdown を行わず、
+    /// 即座に接続を破棄する。
+    pub fn force_close(&mut self) {
+        self.inner.force_close();
+        self.stream.take();
+    }
+
     /// 値を SQL リテラルに変換する。
     pub fn literal(&self, obj: &Value) -> Result<String> {
         self.inner.literal(obj)
@@ -581,7 +590,12 @@ async fn build_tls_config(options: &ConnectOptions) -> Result<rustls::ClientConf
             root_store.add_parsable_certificates(certs);
             builder.with_root_certificates(root_store)
         } else {
-            builder.with_platform_verifier()
+            builder
+                .with_platform_verifier()
+                .map_err(|e| Error::OperationalError {
+                    code: client_error::CR_SSL_CONNECTION_ERROR,
+                    message: format!("Failed to configure platform verifier: {}", e),
+                })?
         }
     } else {
         let verifier: Arc<dyn ServerCertVerifier> = if let Some(ca_path) = &options.ssl_ca {
@@ -609,7 +623,10 @@ async fn build_tls_config(options: &ConnectOptions) -> Result<rustls::ClientConf
                     })?;
             Arc::new(NoHostnameVerifier::new(inner))
         } else {
-            let inner = Verifier::new().with_provider(provider);
+            let inner = Verifier::new(provider).map_err(|e| Error::OperationalError {
+                code: client_error::CR_SSL_CONNECTION_ERROR,
+                message: format!("Failed to create platform verifier: {}", e),
+            })?;
             Arc::new(NoHostnameVerifier::new(Arc::new(inner)))
         };
         builder

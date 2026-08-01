@@ -130,8 +130,8 @@ fn parse_public_key_pem(public_key: &[u8]) -> Result<Vec<u8>> {
 }
 
 fn extract_spki(cert: &Certificate) -> Result<Vec<u8>> {
-    cert.tbs_certificate
-        .subject_public_key_info
+    cert.tbs_certificate()
+        .subject_public_key_info()
         .to_der()
         .map_err(|e| Error::OperationalError {
             code: crate::constants::client_error::CR_AUTH_PLUGIN_ERR,
