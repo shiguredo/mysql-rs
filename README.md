@@ -16,12 +16,143 @@
 - `shiguredo_mysql` - Sans I/O な MySQL プロトコル実装
 - `shiguredo_tokio_mysql` - tokio 上で動作する非同期 MySQL クライアント
 
+## 使い方
+
+### 単一接続
+
+```rust
+use shiguredo_tokio_mysql::{ConnectOptions, Connection, Cursor, SslMode};
+use shiguredo_mysql::converters::Value;
+
+#[tokio::main]
+async fn main() {
+    let options = ConnectOptions {
+        host: "127.0.0.1".to_string(),
+        port: 3306,
+        user: "root".to_string(),
+        password: b"password".to_vec(),
+        database: Some("mydb".to_string()),
+        ssl_mode: SslMode::Disabled,
+        ..Default::default()
+    };
+
+    let mut conn = Connection::connect(options).await.unwrap();
+    let mut cursor = Cursor::new(&mut conn);
+
+    // パラメータ付きクエリ
+    cursor
+        .execute(
+            "SELECT id, name FROM users WHERE age > %s",
+            Some(&[Value::Int(20)]),
+        )
+        .await
+        .unwrap();
+
+    for row in cursor.fetch_all().unwrap() {
+        println!("{:?}", row);
+    }
+
+    conn.close().await.unwrap();
+}
+```
+
+### 非同期並列クエリ
+
+```rust
+use shiguredo_tokio_mysql::{ConnectOptions, Connection, Cursor};
+
+#[tokio::main]
+async fn main() {
+    let options = ConnectOptions {
+        host: "127.0.0.1".to_string(),
+        port: 3306,
+        user: "root".to_string(),
+        password: b"password".to_vec(),
+        database: Some("mydb".to_string()),
+        ..Default::default()
+    };
+
+    // 複数の接続を並列に確立してクエリを実行する
+    let handles: Vec<_> = (0..4)
+        .map(|i| {
+            let opts = options.clone();
+            tokio::spawn(async move {
+                let mut conn = Connection::connect(opts).await.unwrap();
+                let mut cursor = Cursor::new(&mut conn);
+                cursor
+                    .execute(&format!("SELECT {i} AS num"), None)
+                    .await
+                    .unwrap();
+                let rows = cursor.fetch_all().unwrap();
+                rows[0][0].clone()
+            })
+        })
+        .collect();
+
+    for handle in handles {
+        println!("{:?}", handle.await.unwrap());
+    }
+}
+```
+
+### コネクションプール
+
+```rust
+use shiguredo_tokio_mysql::{ConnectOptions, Pool, PoolConfig, Cursor};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() {
+    let options = ConnectOptions {
+        host: "127.0.0.1".to_string(),
+        port: 3306,
+        user: "root".to_string(),
+        password: b"password".to_vec(),
+        database: Some("mydb".to_string()),
+        ..Default::default()
+    };
+
+    let config = PoolConfig {
+        max_size: 10,
+        min_idle: 2,
+        max_idle_time: Duration::from_secs(600),
+        max_lifetime: Duration::from_secs(1800),
+        acquire_timeout: Duration::from_secs(30),
+    };
+
+    let pool = Pool::start(options, config).await.unwrap();
+
+    // 複数タスクからプールを共有する
+    let mut handles = Vec::new();
+    for i in 0..8 {
+        let pool = pool.clone();
+        handles.push(tokio::spawn(async move {
+            // acquire で接続を借りる。drop で自動的に返却される
+            let mut pooled = pool.acquire().await.unwrap();
+            let mut cursor = Cursor::new(pooled.connection_mut());
+            cursor
+                .execute(&format!("SELECT {i} AS task_id"), None)
+                .await
+                .unwrap();
+            let rows = cursor.fetch_all().unwrap();
+            rows[0][0].clone()
+        }));
+    }
+
+    for handle in handles {
+        println!("{:?}", handle.await.unwrap());
+    }
+
+    pool.close().await.unwrap();
+}
+```
+
 ## ライセンス
 
 Apache License 2.0
 
 ```text
-Copyright 2026, Shiguredo Inc.
+Copyright 2026 Shiguredo Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
