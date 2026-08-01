@@ -16,6 +16,19 @@
 - `shiguredo_mysql_core` - Sans I/O な MySQL プロトコル実装
 - `shiguredo_mysql` - tokio 上で動作する非同期 MySQL クライアント
 
+主な機能:
+
+- 単純クエリプロトコル (パラメータ付きクエリ、PyMySQL 互換の `%s` プレースホルダ)
+- カーソル: バッファード / アンバッファード / ディクショナリ / アンバッファードディクショナリ (PyMySQL の SSCursor / DictCursor 相当)
+- トランザクション (自動ロールバック、PyMySQL 互換の直メソッド)
+- コネクションプール (min_idle 補充、最大生存時間)
+- 認証: mysql_native_password / caching_sha2_password / sha256_password / client_ed25519
+- TLS (sslmode: disabled / preferred / required)
+- 圧縮プロトコル (ZLIB)
+- 文字セット自動変換
+- オプションファイル (my.cnf) による接続設定
+- 型変換: 数値 / 浮動小数 / 日付時刻 / TIME / DECIMAL / 文字列 / バイト列 / リスト / 集合
+
 ## 使い方
 
 ### 単一接続
