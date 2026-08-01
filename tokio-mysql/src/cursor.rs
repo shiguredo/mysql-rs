@@ -845,7 +845,8 @@ mod tests {
         use shiguredo_container::{AsyncRunner, GenericImage, ImageExt, WaitFor};
         use std::time::Duration;
 
-        let node = GenericImage::new("mysql", "8.1")
+        let version = std::env::var("MYSQL_VERSION").unwrap_or_else(|_| "8.4".to_string());
+        let node = GenericImage::new("mysql", &version)
             .with_exposed_port(3306.tcp())
             .with_ready_conditions(vec![
                 WaitFor::message_on_either_std("X Plugin ready for connections. Bind-address"),

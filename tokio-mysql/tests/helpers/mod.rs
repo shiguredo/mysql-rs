@@ -19,9 +19,17 @@ pub fn init_tracing() {
     let _ = tracing_subscriber::fmt::try_init();
 }
 
+/// MySQL のテスト対象バージョンを取得する。
+///
+/// `MYSQL_VERSION` 環境変数で切り替えられる (例: `MYSQL_VERSION=26`)。
+/// デフォルトは LTS の 8.4。
+fn mysql_version() -> String {
+    std::env::var("MYSQL_VERSION").unwrap_or_else(|_| "8.4".to_string())
+}
+
 /// MySQL コンテナのイメージを組み立てる。
 fn mysql_image() -> ContainerRequest<GenericImage> {
-    GenericImage::new("mysql", "8.1")
+    GenericImage::new("mysql", &mysql_version())
         .with_exposed_port(3306.tcp())
         .with_ready_conditions(vec![
             WaitFor::message_on_either_std("X Plugin ready for connections. Bind-address"),

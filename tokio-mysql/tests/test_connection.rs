@@ -22,11 +22,19 @@ fn init_tracing() {
         .try_init();
 }
 
+/// テスト対象の MySQL バージョンを取得する。
+///
+/// `MYSQL_VERSION` 環境変数で切り替えられる (例: `MYSQL_VERSION=26`)。
+/// デフォルトは LTS の 8.4。
+fn mysql_version() -> String {
+    std::env::var("MYSQL_VERSION").unwrap_or_else(|_| "8.4".to_string())
+}
+
 /// MySQL 8.1 コンテナを起動する。
 ///
 /// LOAD DATA LOCAL INFILE を検証するため、サーバー側の local_infile を有効にする。
 async fn start_mysql() -> ContainerAsync<GenericImage> {
-    GenericImage::new("mysql", "8.1")
+    GenericImage::new("mysql", &mysql_version())
         .with_exposed_port(3306.tcp())
         .with_cmd(["--local-infile=1"])
         .with_ready_conditions(vec![
@@ -115,8 +123,9 @@ async fn test_connection_management() {
     );
     assert!(conn.thread_id() > 0, "スレッド ID は 0 より大きいはず");
     assert!(
-        conn.server_version().starts_with("8.1"),
-        "サーバーバージョンは 8.1 系であるべき"
+        conn.server_version().starts_with(&mysql_version()),
+        "サーバーバージョンはテスト対象の {} 系であるべき",
+        mysql_version()
     );
 
     // select_db: データベース未選択の接続から切り替える
