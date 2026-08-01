@@ -60,5 +60,5 @@ libfuzzer-sys = "0.4"
 # DECIMAL 型（mysql と同じバージョン）
 rust_decimal = "1.42"
 
-[dependencies.shiguredo_mysql]
-path = ".."
+[dependencies.shiguredo_mysql_core]
+path = "../mysql-core"

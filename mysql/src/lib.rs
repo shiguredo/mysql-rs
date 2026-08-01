@@ -14,7 +14,7 @@ pub mod transaction;
 pub use connection::Connection;
 pub use cursor::{Cursor, DictCursor, UnbufferedCursor, UnbufferedDictCursor};
 pub use pool::{Pool, PoolConfig, PooledConnection};
-pub use shiguredo_mysql::connection::{ConnectOptions, SslMode};
-pub use shiguredo_mysql::{
+pub use shiguredo_mysql_core::connection::{ConnectOptions, SslMode};
+pub use shiguredo_mysql_core::{
     auth, charset, constants, converters, error, optionfile, protocol, time,
 };

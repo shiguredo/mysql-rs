@@ -7,7 +7,7 @@
 
 use chrono::{DateTime, NaiveDate, NaiveTime};
 use proptest::prelude::*;
-use shiguredo_mysql::time::{
+use shiguredo_mysql_core::time::{
     date, date_from_ticks, time, time_from_ticks, timestamp, timestamp_from_ticks,
 };
 

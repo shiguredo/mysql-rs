@@ -7,8 +7,8 @@
 //! ランダムな入力に対するプロパティを検証する。
 
 use proptest::prelude::*;
-use shiguredo_mysql::connection::lenenc_int;
-use shiguredo_mysql::protocol::{
+use shiguredo_mysql_core::connection::lenenc_int;
+use shiguredo_mysql_core::protocol::{
     EofPacketWrapper, FieldDescriptorPacket, LoadLocalPacketWrapper, MysqlPacket, OkPacketWrapper,
 };
 

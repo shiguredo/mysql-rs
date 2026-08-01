@@ -3,7 +3,7 @@
 
 //! MySQL 接続の tokio I/O 実装。
 //!
-//! `shiguredo_mysql::Connection` の sans I/O な状態マシンに対し、
+//! `shiguredo_mysql_core::Connection` の sans I/O な状態マシンに対し、
 //! TCP/TLS 接続、タイムアウト、読み書きを行う。
 
 use rustls::client::WebPkiServerVerifier;
@@ -11,16 +11,16 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName, UnixTime, pem::PemObject};
 use rustls::{DigitallySignedStruct, Error as RustlsError};
 use rustls_platform_verifier::{BuilderVerifierExt, Verifier};
-use shiguredo_mysql::connection::{
+use shiguredo_mysql_core::connection::{
     AuthState, ConnectOptions, Connection as InnerConnection, FeedResult, MySQLResult,
 };
-use shiguredo_mysql::constants::client;
-use shiguredo_mysql::constants::client_error;
-use shiguredo_mysql::constants::command;
-use shiguredo_mysql::converters::Value;
-use shiguredo_mysql::error::{Error, Result};
-use shiguredo_mysql::optionfile::OptionFile;
-use shiguredo_mysql::protocol::{LoadLocalPacketWrapper, MysqlPacket, OkPacketWrapper};
+use shiguredo_mysql_core::constants::client;
+use shiguredo_mysql_core::constants::client_error;
+use shiguredo_mysql_core::constants::command;
+use shiguredo_mysql_core::converters::Value;
+use shiguredo_mysql_core::error::{Error, Result};
+use shiguredo_mysql_core::optionfile::OptionFile;
+use shiguredo_mysql_core::protocol::{LoadLocalPacketWrapper, MysqlPacket, OkPacketWrapper};
 use std::io;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -684,7 +684,7 @@ impl Connection {
     pub fn register_converter(
         &mut self,
         type_code: u8,
-        converter: shiguredo_mysql::converters::Converter,
+        converter: shiguredo_mysql_core::converters::Converter,
     ) {
         self.inner.register_converter(type_code, converter);
     }
@@ -1061,7 +1061,7 @@ async fn build_tls_config(options: &ConnectOptions) -> Result<rustls::ClientConf
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shiguredo_mysql::converters::Value;
+    use shiguredo_mysql_core::converters::Value;
 
     fn dummy_literal(value: &Value) -> Result<String> {
         Ok(format!("[{}]", value.to_sql("utf8").unwrap()))

@@ -1,8 +1,8 @@
 // Copyright 2026, Shiguredo Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use shiguredo_mysql::connection::lenenc_int;
-use shiguredo_mysql::protocol::MysqlPacket;
+use shiguredo_mysql_core::connection::lenenc_int;
+use shiguredo_mysql_core::protocol::MysqlPacket;
 
 #[test]
 fn test_lenenc_int_small() {

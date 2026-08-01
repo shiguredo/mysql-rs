@@ -6,9 +6,9 @@
 //! 文字セット参照関数の一貫性と不変条件を検証する。
 
 use proptest::prelude::*;
-use shiguredo_mysql::charset::{charset_by_id, charset_by_name, mblength};
-use shiguredo_mysql::constants::field_type;
-use shiguredo_mysql::protocol::FieldDescriptorPacket;
+use shiguredo_mysql_core::charset::{charset_by_id, charset_by_name, mblength};
+use shiguredo_mysql_core::constants::field_type;
+use shiguredo_mysql_core::protocol::FieldDescriptorPacket;
 
 /// "utf8" の別名として "utf8mb4" が返る。
 #[test]

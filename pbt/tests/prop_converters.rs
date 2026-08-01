@@ -9,8 +9,8 @@
 use chrono::{NaiveDate, NaiveTime, TimeDelta};
 use proptest::prelude::*;
 use rust_decimal::Decimal;
-use shiguredo_mysql::constants::field_type;
-use shiguredo_mysql::converters::{Value, decoder_for, escape_bytes, escape_string};
+use shiguredo_mysql_core::constants::field_type;
+use shiguredo_mysql_core::converters::{Value, decoder_for, escape_bytes, escape_string};
 
 /// テスト用の Value 戦略。
 fn value_strategy() -> impl Strategy<Value = Value> {

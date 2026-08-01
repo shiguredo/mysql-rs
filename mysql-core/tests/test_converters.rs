@@ -1,8 +1,8 @@
 // Copyright 2026, Shiguredo Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use shiguredo_mysql::constants::field_type;
-use shiguredo_mysql::converters::{Value, decoder_for, escape_bytes, escape_string};
+use shiguredo_mysql_core::constants::field_type;
+use shiguredo_mysql_core::converters::{Value, decoder_for, escape_bytes, escape_string};
 use std::collections::HashSet;
 
 #[test]

@@ -93,11 +93,11 @@ pass_filenames = false
 priority = 10
 
 # cargo test: コミットを遅くしないため pre-push でだけ実行する
-# コンテナを要する shiguredo_tokio_mysql は除外し、軽量なテストだけ回す
+# コンテナを要する shiguredo_mysql は除外し、軽量なテストだけ回す
 [[repos.hooks]]
 id = "cargo-test"
 name = "cargo test"
-entry = "cargo test --workspace --exclude shiguredo_tokio_mysql"
+entry = "cargo test --workspace --exclude shiguredo_mysql"
 language = "system"
 types = ["rust"]
 pass_filenames = false
@@ -106,9 +106,9 @@ priority = 20
 
 # コンテナベースの統合テストは pre-push で別途実行する
 [[repos.hooks]]
-id = "cargo-test-tokio-mysql"
-name = "cargo test (tokio-mysql integration)"
-entry = "cargo test -p shiguredo_tokio_mysql"
+id = "cargo-test-mysql"
+name = "cargo test (mysql integration)"
+entry = "cargo test -p shiguredo_mysql"
 language = "system"
 types = ["rust"]
 pass_filenames = false

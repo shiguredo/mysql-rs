@@ -10,9 +10,9 @@
 //! 次の `begin()` 時またはプールへの返却時にロールバックされる。
 
 use crate::connection::Connection;
-use shiguredo_mysql::constants::client_error;
-use shiguredo_mysql::converters::Value;
-use shiguredo_mysql::error::{Error, Result};
+use shiguredo_mysql_core::constants::client_error;
+use shiguredo_mysql_core::converters::Value;
+use shiguredo_mysql_core::error::{Error, Result};
 
 /// トランザクションの分離レベル。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,7 +1,7 @@
 // Copyright 2026, Shiguredo Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use shiguredo_mysql::optionfile::OptionFile;
+use shiguredo_mysql_core::optionfile::OptionFile;
 
 #[test]
 fn test_parse_basic() {

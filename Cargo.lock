@@ -829,7 +829,7 @@ dependencies = [
  "chrono",
  "proptest",
  "rust_decimal",
- "shiguredo_mysql",
+ "shiguredo_mysql_core",
 ]
 
 [[package]]
@@ -1406,6 +1406,23 @@ checksum = "521929c2893005420ccee04aada685000c967cbcae36cd46117b40bf5495e5ab"
 name = "shiguredo_mysql"
 version = "0.0.0"
 dependencies = [
+ "chrono",
+ "regex",
+ "rust_decimal",
+ "rustls",
+ "rustls-platform-verifier",
+ "shiguredo_container",
+ "shiguredo_mysql_core",
+ "tokio",
+ "tokio-rustls",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "shiguredo_mysql_core"
+version = "0.0.0"
+dependencies = [
  "aws-lc-rs",
  "chrono",
  "curve25519-dalek",
@@ -1416,23 +1433,6 @@ dependencies = [
  "rustls-pki-types",
  "tracing",
  "x509-cert",
-]
-
-[[package]]
-name = "shiguredo_tokio_mysql"
-version = "0.0.0"
-dependencies = [
- "chrono",
- "regex",
- "rust_decimal",
- "rustls",
- "rustls-platform-verifier",
- "shiguredo_container",
- "shiguredo_mysql",
- "tokio",
- "tokio-rustls",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

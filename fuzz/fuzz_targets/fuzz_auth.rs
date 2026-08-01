@@ -4,7 +4,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use shiguredo_mysql::auth::{scramble_caching_sha2, scramble_native_password};
+use shiguredo_mysql_core::auth::{scramble_caching_sha2, scramble_native_password};
 
 fuzz_target!(|data: &[u8]| {
     // 任意の入力に対してスクランブル関数がパニックしないことを検証する。

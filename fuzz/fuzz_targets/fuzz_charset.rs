@@ -4,7 +4,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use shiguredo_mysql::charset::{charset_by_name, mblength};
+use shiguredo_mysql_core::charset::{charset_by_name, mblength};
 
 fuzz_target!(|data: &[u8]| {
     // 任意のバイト列を文字セット名として参照してもパニックしない。

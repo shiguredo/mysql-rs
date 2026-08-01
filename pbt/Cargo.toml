@@ -8,9 +8,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-shiguredo_mysql = { path = ".." }
-proptest = "1.11"
+aws-lc-rs = { workspace = true }
 # 以下の依存は mysql クレートと同じバージョンを使用する。
 chrono = { workspace = true }
+proptest = "1.11"
 rust_decimal = { workspace = true }
-aws-lc-rs = { workspace = true }
+shiguredo_mysql_core = { path = "../mysql-core" }

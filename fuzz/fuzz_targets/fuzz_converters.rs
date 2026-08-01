@@ -4,7 +4,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use shiguredo_mysql::converters::{decoder_for, escape_bytes, escape_string, Value};
+use shiguredo_mysql_core::converters::{decoder_for, escape_bytes, escape_string, Value};
 
 fuzz_target!(|data: &[u8]| {
     // 任意の入力に対してエスケープ関数がパニックしないことを検証する。

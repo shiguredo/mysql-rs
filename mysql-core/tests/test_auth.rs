@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aws_lc_rs::digest::{self, Context};
-use shiguredo_mysql::auth::{scramble_caching_sha2, scramble_native_password};
+use shiguredo_mysql_core::auth::{scramble_caching_sha2, scramble_native_password};
 
 #[test]
 fn test_scramble_native_password_empty() {

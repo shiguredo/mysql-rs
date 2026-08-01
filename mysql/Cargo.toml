@@ -1,5 +1,5 @@
 [package]
-name = "shiguredo_tokio_mysql"
+name = "shiguredo_mysql"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -18,7 +18,8 @@ rustls = {
 }
 # OS 標準の証明書検証（rustls-native-certs の代替）
 rustls-platform-verifier = "0.7"
-shiguredo_mysql = { path = ".." }
+# Sans I/O な MySQL プロトコル実装
+shiguredo_mysql_core = { path = "../mysql-core" }
 # 非同期ランタイムおよび TCP/TLS ストリーム処理
 tokio = {
   version = "1.53",

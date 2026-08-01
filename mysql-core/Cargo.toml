@@ -1,0 +1,39 @@
+[package]
+name = "shiguredo_mysql_core"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+# 暗号処理（ハッシュ、RSA-OAEP）
+aws-lc-rs = { workspace = true }
+chrono = { workspace = true }
+# client_ed25519 認証の楕円曲線演算
+curve25519-dalek = {
+  version = "5.0",
+  features = ["digest", "precomputed-tables", "rand_core"]
+}
+# 文字エンコーディング変換
+encoding_rs = "0.8"
+# MySQL 圧縮プロトコル（ZLIB）
+noflate = "0.1"
+rust_decimal = { workspace = true }
+rustls-pki-types = { workspace = true }
+tracing = { workspace = true }
+# X.509 証明書パース（公開鍵抽出用）
+x509-cert = { version = "0.3", features = ["pem"] }
+
+[dev-dependencies]
+# テスト用 X.509 証明書の動的生成（PEM はハードコードしない）
+rcgen = {
+  version = "0.14",
+  default-features = false,
+  features = [
+    "aws_lc_rs",
+    "crypto",
+    "pem",
+  ]
+}

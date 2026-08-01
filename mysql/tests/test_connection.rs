@@ -9,9 +9,9 @@
 
 use shiguredo_container::core::IntoContainerPort;
 use shiguredo_container::{AsyncRunner, ContainerAsync, GenericImage, ImageExt, WaitFor};
-use shiguredo_mysql::constants::field_type;
-use shiguredo_mysql::converters::Value;
-use shiguredo_tokio_mysql::{ConnectOptions, Connection, SslMode, UnbufferedDictCursor};
+use shiguredo_mysql::{ConnectOptions, Connection, SslMode, UnbufferedDictCursor};
+use shiguredo_mysql_core::constants::field_type;
+use shiguredo_mysql_core::converters::Value;
 use std::time::Duration;
 
 /// テスト用のログを初期化する。

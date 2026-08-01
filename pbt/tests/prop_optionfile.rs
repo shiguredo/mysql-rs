@@ -7,7 +7,7 @@
 //! `get` で元の値 (クォート・空白除去済み) を取り出せることを検証する。
 
 use proptest::prelude::*;
-use shiguredo_mysql::optionfile::OptionFile;
+use shiguredo_mysql_core::optionfile::OptionFile;
 
 /// キー名と値の戦略。
 fn key_value_strategy() -> impl Strategy<Value = (String, String)> {

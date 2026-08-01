@@ -5,10 +5,10 @@
 
 use crate::connection::Connection;
 use regex::Regex;
-use shiguredo_mysql::connection::MySQLResult;
-use shiguredo_mysql::converters::Value;
-use shiguredo_mysql::error::{Error, Result};
-use shiguredo_mysql::protocol::ColumnDescription;
+use shiguredo_mysql_core::connection::MySQLResult;
+use shiguredo_mysql_core::converters::Value;
+use shiguredo_mysql_core::error::{Error, Result};
+use shiguredo_mysql_core::protocol::ColumnDescription;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -69,7 +69,7 @@ impl<'a> Cursor<'a> {
     fn check_closed(&self) -> Result<()> {
         if self.closed {
             Err(Error::ProgrammingError {
-                code: shiguredo_mysql::constants::client_error::CR_COMMANDS_OUT_OF_SYNC,
+                code: shiguredo_mysql_core::constants::client_error::CR_COMMANDS_OUT_OF_SYNC,
                 message: "Cursor closed".to_string(),
             })
         } else {
@@ -147,7 +147,8 @@ impl<'a> Cursor<'a> {
             if sql.len() + value_str.len() + postfix.len() + separator_len > max_len {
                 if i == 0 {
                     return Err(Error::DataError {
-                        code: shiguredo_mysql::constants::client_error::CR_INVALID_PARAMETER_NO,
+                        code:
+                            shiguredo_mysql_core::constants::client_error::CR_INVALID_PARAMETER_NO,
                         message: "execute_many row exceeds maximum query length".to_string(),
                     });
                 }
@@ -204,7 +205,7 @@ impl<'a> Cursor<'a> {
         self.execute(&format!("SELECT {}", select_parts.join(",")), None)
             .await?;
         let row = self.fetch_one()?.ok_or_else(|| Error::ProgrammingError {
-            code: shiguredo_mysql::constants::client_error::CR_NO_RESULT_SET,
+            code: shiguredo_mysql_core::constants::client_error::CR_NO_RESULT_SET,
             message: "Failed to fetch procedure output variables".to_string(),
         })?;
         let mut result = args.to_vec();
@@ -265,7 +266,7 @@ impl<'a> Cursor<'a> {
     pub fn scroll(&mut self, value: isize, mode: &str) -> Result<()> {
         self.check_executed()?;
         let rows = self.rows.as_ref().ok_or_else(|| Error::ProgrammingError {
-            code: shiguredo_mysql::constants::client_error::CR_NO_RESULT_SET,
+            code: shiguredo_mysql_core::constants::client_error::CR_NO_RESULT_SET,
             message: "No result set".to_string(),
         })?;
         let new_pos = match mode {
@@ -273,14 +274,14 @@ impl<'a> Cursor<'a> {
             "absolute" => value,
             _ => {
                 return Err(Error::ProgrammingError {
-                    code: shiguredo_mysql::constants::client_error::CR_INVALID_PARAMETER_NO,
+                    code: shiguredo_mysql_core::constants::client_error::CR_INVALID_PARAMETER_NO,
                     message: format!("unknown scroll mode {}", mode),
                 });
             }
         };
         if new_pos < 0 || new_pos as usize >= rows.len() {
             return Err(Error::ProgrammingError {
-                code: shiguredo_mysql::constants::client_error::CR_INVALID_PARAMETER_NO,
+                code: shiguredo_mysql_core::constants::client_error::CR_INVALID_PARAMETER_NO,
                 message: "out of range".to_string(),
             });
         }
@@ -291,7 +292,7 @@ impl<'a> Cursor<'a> {
     fn check_executed(&self) -> Result<()> {
         if self.executed.is_none() {
             Err(Error::ProgrammingError {
-                code: shiguredo_mysql::constants::client_error::CR_NO_RESULT_SET,
+                code: shiguredo_mysql_core::constants::client_error::CR_NO_RESULT_SET,
                 message: "execute() first".to_string(),
             })
         } else {
@@ -491,7 +492,7 @@ impl<'a> UnbufferedCursor<'a> {
     fn check_closed(&self) -> Result<()> {
         if self.closed {
             Err(Error::ProgrammingError {
-                code: shiguredo_mysql::constants::client_error::CR_COMMANDS_OUT_OF_SYNC,
+                code: shiguredo_mysql_core::constants::client_error::CR_COMMANDS_OUT_OF_SYNC,
                 message: "Cursor closed".to_string(),
             })
         } else {
@@ -502,7 +503,7 @@ impl<'a> UnbufferedCursor<'a> {
     fn check_executed(&self) -> Result<()> {
         if !self.executed {
             Err(Error::ProgrammingError {
-                code: shiguredo_mysql::constants::client_error::CR_NO_RESULT_SET,
+                code: shiguredo_mysql_core::constants::client_error::CR_NO_RESULT_SET,
                 message: "execute() first".to_string(),
             })
         } else {
@@ -561,7 +562,7 @@ impl<'a> UnbufferedCursor<'a> {
                 if sql.len() + value_str.len() + postfix.len() + separator_len > max_len {
                     if i == 0 {
                         return Err(Error::DataError {
-                            code: shiguredo_mysql::constants::client_error::CR_INVALID_PARAMETER_NO,
+                            code: shiguredo_mysql_core::constants::client_error::CR_INVALID_PARAMETER_NO,
                             message: "execute_many row exceeds maximum query length".to_string(),
                         });
                     }
@@ -637,7 +638,7 @@ impl<'a> UnbufferedCursor<'a> {
             "relative" => {
                 if value < 0 {
                     return Err(Error::NotSupportedError {
-                        code: shiguredo_mysql::constants::client_error::CR_UNKNOWN_ERROR,
+                        code: shiguredo_mysql_core::constants::client_error::CR_UNKNOWN_ERROR,
                         message: "Backwards scrolling not supported by this cursor".to_string(),
                     });
                 }
@@ -647,7 +648,7 @@ impl<'a> UnbufferedCursor<'a> {
                 let target = value as usize;
                 if target < self.row_number {
                     return Err(Error::NotSupportedError {
-                        code: shiguredo_mysql::constants::client_error::CR_UNKNOWN_ERROR,
+                        code: shiguredo_mysql_core::constants::client_error::CR_UNKNOWN_ERROR,
                         message: "Backwards scrolling not supported by this cursor".to_string(),
                     });
                 }
@@ -655,7 +656,7 @@ impl<'a> UnbufferedCursor<'a> {
             }
             _ => {
                 return Err(Error::ProgrammingError {
-                    code: shiguredo_mysql::constants::client_error::CR_INVALID_PARAMETER_NO,
+                    code: shiguredo_mysql_core::constants::client_error::CR_INVALID_PARAMETER_NO,
                     message: format!("unknown scroll mode {}", mode),
                 });
             }
@@ -665,7 +666,8 @@ impl<'a> UnbufferedCursor<'a> {
                 Some(_) => self.row_number += 1,
                 None => {
                     return Err(Error::ProgrammingError {
-                        code: shiguredo_mysql::constants::client_error::CR_INVALID_PARAMETER_NO,
+                        code:
+                            shiguredo_mysql_core::constants::client_error::CR_INVALID_PARAMETER_NO,
                         message: "out of range".to_string(),
                     });
                 }

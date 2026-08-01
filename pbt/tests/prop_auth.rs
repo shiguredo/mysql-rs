@@ -7,7 +7,7 @@
 
 use aws_lc_rs::digest::{self, Context};
 use proptest::prelude::*;
-use shiguredo_mysql::auth::{
+use shiguredo_mysql_core::auth::{
     ed25519_password, scramble_caching_sha2, scramble_native_password, sha2_rsa_encrypt,
 };
 
