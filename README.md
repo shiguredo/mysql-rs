@@ -147,6 +147,102 @@ async fn main() {
 }
 ```
 
+### トランザクション
+
+`begin()` が返す `Transaction` ガード型は、`commit` / `rollback` せずに破棄すると
+次の `begin()` 時またはプールへの返却時に自動でロールバックされる。
+
+```rust
+use shiguredo_tokio_mysql::{ConnectOptions, Connection};
+
+#[tokio::main]
+async fn main() {
+    let options = ConnectOptions {
+        host: "127.0.0.1".to_string(),
+        port: 3306,
+        user: "root".to_string(),
+        password: b"password".to_vec(),
+        database: Some("mydb".to_string()),
+        ..Default::default()
+    };
+
+    let mut conn = Connection::connect(options).await.unwrap();
+
+    let mut tx = conn.begin().await.unwrap();
+    tx.query("INSERT INTO users (name) VALUES ('alice')", false)
+        .await
+        .unwrap();
+    // コミットせずに drop するとロールバックされる
+    tx.commit().await.unwrap();
+
+    // autocommit を無効にして接続した場合の PyMySQL 互換の直メソッド
+    conn.begin().await.unwrap();
+    conn.query("INSERT INTO users (name) VALUES ('bob')", false)
+        .await
+        .unwrap();
+    conn.commit().await.unwrap();
+
+    conn.close().await.unwrap();
+}
+```
+
+### アンバッファードカーソル
+
+`unbuffered_cursor()` は行をメモリに蓄えず、fetch のたびにサーバーから読み込む。
+巨大な結果セットを扱う場合に使う (PyMySQL の `SSCursor` 相当)。
+
+```rust
+use shiguredo_tokio_mysql::{ConnectOptions, Connection};
+
+#[tokio::main]
+async fn main() {
+    let options = ConnectOptions {
+        host: "127.0.0.1".to_string(),
+        port: 3306,
+        user: "root".to_string(),
+        password: b"password".to_vec(),
+        database: Some("mydb".to_string()),
+        ..Default::default()
+    };
+
+    let mut conn = Connection::connect(options).await.unwrap();
+    let mut cursor = conn.unbuffered_cursor();
+
+    cursor
+        .execute("SELECT id, name FROM users", None)
+        .await
+        .unwrap();
+
+    while let Some(row) = cursor.fetch_one().await.unwrap() {
+        println!("{:?}", row);
+    }
+
+    conn.close().await.unwrap();
+}
+```
+
+### オプションファイル (my.cnf)
+
+`read_default_file` を設定すると、接続時にオプションファイルを読み、
+デフォルト値のままのフィールドを指定グループ (既定は `client`) の値で補完する。
+
+```rust
+use shiguredo_tokio_mysql::{ConnectOptions, Connection};
+use std::path::PathBuf;
+
+#[tokio::main]
+async fn main() {
+    let options = ConnectOptions {
+        // デフォルト値のままのフィールド (host / port / user など) が補完される
+        read_default_file: Some(PathBuf::from("/etc/my.cnf")),
+        ..Default::default()
+    };
+
+    let mut conn = Connection::connect(options).await.unwrap();
+    conn.close().await.unwrap();
+}
+```
+
 ## ライセンス
 
 Apache License 2.0
