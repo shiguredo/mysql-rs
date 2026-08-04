@@ -7,10 +7,10 @@
 //! mpsc チャネル経由で貸出・返却を行う。
 //! Mutex / RwLock は使用しない。
 
+use crate::connection::ConnectOptions;
 use crate::connection::Connection;
-use shiguredo_mysql_core::connection::ConnectOptions;
-use shiguredo_mysql_core::constants::client_error;
-use shiguredo_mysql_core::error::{Error, Result};
+use crate::constants::client_error;
+use crate::error::{Error, Result};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::Instant;

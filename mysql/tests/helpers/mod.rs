@@ -8,8 +8,10 @@ use shiguredo_container::core::IntoContainerPort;
 use shiguredo_container::{
     AsyncRunner, ContainerAsync, ContainerRequest, GenericImage, ImageExt, WaitFor,
 };
-use shiguredo_mysql::{ConnectOptions, Connection, Cursor, DictCursor, Pool, PoolConfig, SslMode};
-use shiguredo_mysql_core::converters::Value;
+use shiguredo_mysql::connection::{ConnectOptions, Connection, SslMode};
+use shiguredo_mysql::converters::Value;
+use shiguredo_mysql::cursor::{Cursor, DictCursor};
+use shiguredo_mysql::pool::{Pool, PoolConfig};
 use std::time::Duration;
 
 /// tracing subscriber を一度だけ初期化する。

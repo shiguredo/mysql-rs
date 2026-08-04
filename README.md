@@ -13,7 +13,7 @@
 
 `mysql-rs` は MySQL クライアントの Rust 実装です。
 
-- `shiguredo_mysql_core` - Sans I/O な MySQL プロトコル実装
+- `shiguredo_mysql_core` - Sans I/O な MySQL プロトコル実装 (内部実装。利用者は `shiguredo_mysql` だけに依存すればよい)
 - `shiguredo_mysql` - tokio 上で動作する非同期 MySQL クライアント
 
 主な機能:
@@ -34,8 +34,9 @@
 ### 単一接続
 
 ```rust
-use shiguredo_mysql::{ConnectOptions, Connection, Cursor, SslMode};
-use shiguredo_mysql_core::converters::Value;
+use shiguredo_mysql::connection::{ConnectOptions, Connection, SslMode};
+use shiguredo_mysql::converters::Value;
+use shiguredo_mysql::cursor::Cursor;
 
 #[tokio::main]
 async fn main() {
@@ -72,7 +73,8 @@ async fn main() {
 ### 非同期並列クエリ
 
 ```rust
-use shiguredo_mysql::{ConnectOptions, Connection, Cursor};
+use shiguredo_mysql::connection::{ConnectOptions, Connection};
+use shiguredo_mysql::cursor::Cursor;
 
 #[tokio::main]
 async fn main() {
@@ -111,7 +113,9 @@ async fn main() {
 ### コネクションプール
 
 ```rust
-use shiguredo_mysql::{ConnectOptions, Pool, PoolConfig, Cursor};
+use shiguredo_mysql::connection::ConnectOptions;
+use shiguredo_mysql::cursor::Cursor;
+use shiguredo_mysql::pool::{Pool, PoolConfig};
 use std::time::Duration;
 
 #[tokio::main]
@@ -166,7 +170,7 @@ async fn main() {
 次の `begin()` 時またはプールへの返却時に自動でロールバックされる。
 
 ```rust
-use shiguredo_mysql::{ConnectOptions, Connection};
+use shiguredo_mysql::connection::{ConnectOptions, Connection};
 
 #[tokio::main]
 async fn main() {
@@ -205,7 +209,7 @@ async fn main() {
 巨大な結果セットを扱う場合に使う (PyMySQL の `SSCursor` 相当)。
 
 ```rust
-use shiguredo_mysql::{ConnectOptions, Connection};
+use shiguredo_mysql::connection::{ConnectOptions, Connection};
 
 #[tokio::main]
 async fn main() {
@@ -240,7 +244,7 @@ async fn main() {
 デフォルト値のままのフィールドを指定グループ (既定は `client`) の値で補完する。
 
 ```rust
-use shiguredo_mysql::{ConnectOptions, Connection};
+use shiguredo_mysql::connection::{ConnectOptions, Connection};
 use std::path::PathBuf;
 
 #[tokio::main]

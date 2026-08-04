@@ -3,24 +3,22 @@
 
 //! MySQL 接続の tokio I/O 実装。
 //!
-//! `shiguredo_mysql_core::Connection` の sans I/O な状態マシンに対し、
+//! sans I/O な状態マシン (内部実装) に対し、
 //! TCP/TLS 接続、タイムアウト、読み書きを行う。
 
+use crate::constants::client;
+use crate::constants::client_error;
+use crate::constants::command;
+use crate::converters::Value;
+use crate::error::{Error, Result};
+use crate::optionfile::OptionFile;
+use crate::protocol::{LoadLocalPacketWrapper, MysqlPacket, OkPacketWrapper};
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName, UnixTime, pem::PemObject};
 use rustls::{DigitallySignedStruct, Error as RustlsError};
 use rustls_platform_verifier::{BuilderVerifierExt, Verifier};
-use shiguredo_mysql_core::connection::{
-    AuthState, ConnectOptions, Connection as InnerConnection, FeedResult, MySQLResult,
-};
-use shiguredo_mysql_core::constants::client;
-use shiguredo_mysql_core::constants::client_error;
-use shiguredo_mysql_core::constants::command;
-use shiguredo_mysql_core::converters::Value;
-use shiguredo_mysql_core::error::{Error, Result};
-use shiguredo_mysql_core::optionfile::OptionFile;
-use shiguredo_mysql_core::protocol::{LoadLocalPacketWrapper, MysqlPacket, OkPacketWrapper};
+use shiguredo_mysql_core::connection::{AuthState, Connection as InnerConnection, FeedResult};
 use std::io;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -28,6 +26,11 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UnixStream};
 use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
+
+// 以下は sans I/O 実装 (shiguredo_mysql_core) から再エクスポートした型。
+// 利用者は shiguredo_mysql クレートだけに依存すればよい。
+// ドキュメントは sans I/O 実装側のものが引き継がれる。
+pub use shiguredo_mysql_core::connection::{ConnectOptions, MySQLResult, SslMode};
 
 /// MySQL 接続。
 pub struct Connection {
@@ -681,11 +684,7 @@ impl Connection {
     /// フィールド型ごとのデコーダーを登録する。
     ///
     /// 登録したデコーダーは組み込みのデコーダーより優先される。
-    pub fn register_converter(
-        &mut self,
-        type_code: u8,
-        converter: shiguredo_mysql_core::converters::Converter,
-    ) {
+    pub fn register_converter(&mut self, type_code: u8, converter: crate::converters::Converter) {
         self.inner.register_converter(type_code, converter);
     }
 
@@ -1061,7 +1060,7 @@ async fn build_tls_config(options: &ConnectOptions) -> Result<rustls::ClientConf
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shiguredo_mysql_core::converters::Value;
+    use crate::converters::Value;
 
     fn dummy_literal(value: &Value) -> Result<String> {
         Ok(format!("[{}]", value.to_sql("utf8").unwrap()))
