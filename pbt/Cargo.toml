@@ -11,6 +11,7 @@ publish = false
 aws-lc-rs = { workspace = true }
 # 以下の依存は mysql クレートと同じバージョンを使用する。
 chrono = { workspace = true }
-proptest = "1.11"
+# PBT（プロパティベーステスト）
+noprop = "0.2"
 rust_decimal = { workspace = true }
 shiguredo_mysql_core = { path = "../mysql-core" }
